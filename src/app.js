@@ -285,25 +285,78 @@ function renderSidebar() {
 
 function renderHeader() {
   const chat = state.activeChat;
-  const persona = currentPersona();
   el.chatTitle.value = chat?.title || '';
   el.chatTitle.disabled = !chat;
-  el.headerPersona.textContent = persona?.name ? `as ${persona.name}` : '';
-  el.headerModel.textContent = state.settings.model || 'no model set';
-  el.btnDeleteChat.classList.toggle('hidden', !chat);
-  el.btnBranchMenu.classList.toggle('hidden', !chat || tree.activePath(chat).length === 0);
-  renderPresentCast();
+  el.btnScene.classList.toggle('hidden', !chat);
+  renderSceneSummary();
 }
 
-function renderPresentCast() {
+// A single compact line under the title, standing in for all the old header clutter.
+function renderSceneSummary() {
   const chat = state.activeChat;
-  if (!chat || !state.activeWorld) { el.presentCast.innerHTML = ''; return; }
-  const chips = presentCharacters(chat)
-    .map((c) => `<span class="cast-chip">${escapeHtml(c.name)}<button data-leave="${escapeAttr(c.id)}" title="Leave scene" aria-label="Remove ${escapeAttr(c.name)}">×</button></span>`)
-    .join('');
-  const canAdd = state.activeWorld.cast.some((c) => !(chat.presentCast || []).includes(c.id));
-  const add = canAdd ? '<span class="cast-chip add" data-add-cast title="Add a character to the scene">＋ cast</span>' : '';
-  el.presentCast.innerHTML = chips + add;
+  if (!chat) { el.sceneSummary.textContent = ''; el.sceneSummary.classList.add('hidden'); return; }
+  const n = (chat.presentCast || []).length;
+  const persona = currentPersona();
+  const bits = [
+    `${n} in scene`,
+    persona?.name ? `as ${persona.name}` : null,
+    state.settings.model || 'no model',
+  ].filter(Boolean);
+  el.sceneSummary.textContent = `${bits.join('  ·  ')}  ⚙`;
+  el.sceneSummary.classList.remove('hidden');
+}
+
+/* ── Scene menu (per-chat settings: roster, persona, model, branch, delete) ── */
+
+function openSceneMenu() {
+  const chat = state.activeChat;
+  const world = state.activeWorld;
+  if (!chat || !world) { toast('Open a scene first.'); return; }
+  const persona = currentPersona();
+
+  const present = presentCharacters(chat);
+  const presentChips = present.length
+    ? present.map((c) => `<span class="cast-chip">${escapeHtml(c.name)}<button data-leave="${escapeAttr(c.id)}" title="Remove from scene" aria-label="Remove ${escapeAttr(c.name)}">×</button></span>`).join('')
+    : '<span class="mem-empty">No one is in this scene yet.</span>';
+
+  const available = world.cast.filter((c) => !(chat.presentCast || []).includes(c.id));
+  const addChips = available.length
+    ? available.map((c) => `<span class="cast-chip add" data-add-present="${escapeAttr(c.id)}" role="button" tabindex="0">＋ ${escapeHtml(c.name)}</span>`).join('')
+    : '<span class="mem-empty">Everyone in the cast is already here.</span>';
+
+  const body = `
+    <div class="scene-section">
+      <div class="scene-section-head">In this scene (${present.length})</div>
+      <div class="chip-wrap">${presentChips}</div>
+    </div>
+    <div class="scene-section">
+      <div class="scene-section-head">Add to scene</div>
+      <div class="chip-wrap">${addChips}</div>
+    </div>
+    <div class="divider"></div>
+    <div class="scene-row">
+      <div><div class="scene-row-label">Playing as</div><div class="scene-row-value">${escapeHtml(persona?.name || '—')}</div></div>
+      <button class="mini-btn" data-change-persona>Change</button>
+    </div>
+    <div class="scene-row">
+      <div><div class="scene-row-label">Model</div><div class="scene-row-value">${escapeHtml(state.settings.model || 'not set')}</div></div>
+      <button class="mini-btn" data-open-settings>Settings</button>
+    </div>
+    <div class="scene-row">
+      <div><div class="scene-row-label">Memory</div><div class="scene-row-value">${world.facts.length} fact${world.facts.length === 1 ? '' : 's'} in this world</div></div>
+      <button class="mini-btn" data-open-memory>Open</button>
+    </div>`;
+  const foot = `<button class="btn ghost" data-close>Done</button><button class="btn" data-branch-scene>⑃ Branch</button><button class="btn danger" data-del-scene>Delete scene</button>`;
+  const modal = openModal(modalShell('Scene', body, foot, { wide: true }));
+
+  const rewire = () => { renderHeader(); openSceneMenu(); };
+  modal.querySelectorAll('[data-leave]').forEach((b) => (b.onclick = () => { toggleCastPresence(b.dataset.leave, false); rewire(); }));
+  modal.querySelectorAll('[data-add-present]').forEach((b) => (b.onclick = () => { toggleCastPresence(b.dataset.addPresent, true); rewire(); }));
+  modal.querySelector('[data-change-persona]').onclick = openPersonas;
+  modal.querySelector('[data-open-settings]').onclick = openSettings;
+  modal.querySelector('[data-open-memory]').onclick = openMemory;
+  modal.querySelector('[data-branch-scene]').onclick = () => { const id = tree.leafId(chat); closeModal(); if (id) branchFrom(id); else toast('Nothing to branch yet.'); };
+  modal.querySelector('[data-del-scene]').onclick = () => confirmDeleteChat(chat.id);
 }
 
 function renderMessages() {
@@ -893,16 +946,6 @@ function toggleCastPresence(id, present) {
   renderHeader();
 }
 
-function openAddCastPicker() {
-  const chat = state.activeChat;
-  const world = state.activeWorld;
-  const avail = world.cast.filter((c) => !(chat.presentCast || []).includes(c.id));
-  if (!avail.length) return;
-  const rows = avail.map((c) => `<div class="list-row"><div class="row-avatar">${avatarMarkup(c.avatar, '🎭')}</div><div class="row-main"><div class="row-name">${escapeHtml(c.name)}</div></div><button class="mini-btn" data-add-present="${escapeAttr(c.id)}">Add to scene</button></div>`).join('');
-  const modal = openModal(modalShell('Add to scene', rows, '<button class="btn ghost" data-close>Done</button>'));
-  modal.querySelectorAll('[data-add-present]').forEach((b) => (b.onclick = () => { toggleCastPresence(b.dataset.addPresent, true); closeModal(); }));
-}
-
 /* ── Modals: shell ────────────────────────────────────────────────────────── */
 
 function openModal(html) {
@@ -1412,11 +1455,8 @@ function cacheDom() {
   el.btnMenu = $('btn-menu');
   el.btnSidebar = $('btn-sidebar');
   el.chatTitle = $('chat-title');
-  el.presentCast = $('present-cast');
-  el.headerPersona = $('header-persona');
-  el.headerModel = $('header-model');
-  el.btnDeleteChat = $('btn-delete-chat');
-  el.btnBranchMenu = $('btn-branch-menu');
+  el.sceneSummary = $('scene-summary');
+  el.btnScene = $('btn-scene');
   el.messages = $('messages');
   el.input = $('input');
   el.btnSend = $('btn-send');
@@ -1446,8 +1486,8 @@ function wireEvents() {
   el.btnRegenerate.onclick = regenerateLast;
   el.btnContinue.onclick = continueLast;
   el.btnImpersonate.onclick = impersonate;
-  el.btnDeleteChat.onclick = () => state.activeChatId && confirmDeleteChat(state.activeChatId);
-  el.btnBranchMenu.onclick = () => { const id = tree.leafId(state.activeChat); if (id) branchFrom(id); };
+  el.btnScene.onclick = openSceneMenu;
+  el.sceneSummary.onclick = openSceneMenu;
   el.btnMenu.onclick = () => el.sidebar.classList.toggle('open');
   el.btnSidebar.onclick = () => el.sidebar.classList.toggle('open');
 
@@ -1458,12 +1498,6 @@ function wireEvents() {
   el.chatTitle.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); el.chatTitle.blur(); } });
 
   el.messages.addEventListener('click', onMessagesClick);
-
-  el.presentCast.addEventListener('click', (e) => {
-    const leave = e.target.closest('[data-leave]');
-    if (leave) return toggleCastPresence(leave.dataset.leave, false);
-    if (e.target.closest('[data-add-cast]')) return openAddCastPicker();
-  });
 
   el.chatList.addEventListener('click', (e) => {
     const del = e.target.closest('[data-del-chat]');
