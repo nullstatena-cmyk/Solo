@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Solo RP</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Sidebar ─────────────────────────────────────────────────────────── -->
+    <aside id="sidebar">
+      <header class="side-head">
+        <div class="brand">Solo&nbsp;RP</div>
+        <button id="btn-menu" class="icon-btn" title="Menu" aria-label="Menu">≡</button>
+      </header>
+
+      <button id="world-switch" class="char-switch" title="Switch or manage worlds">
+        <span class="char-switch-avatar" id="world-switch-icon">🌍</span>
+        <span class="char-switch-main">
+          <span class="char-switch-name" id="world-switch-name">No world</span>
+          <span class="char-switch-mode" id="world-switch-mode"></span>
+        </span>
+        <span class="char-switch-caret">▾</span>
+      </button>
+
+      <div class="side-actions">
+        <button id="btn-new-chat" class="primary-btn">＋ New scene</button>
+      </div>
+
+      <nav id="chat-list" class="chat-list" aria-label="Scenes"></nav>
+
+      <footer class="side-foot">
+        <button class="foot-btn" id="btn-cast" title="The cast the AI plays">Cast</button>
+        <button class="foot-btn" id="btn-lore" title="World bible / lorebook">Lore</button>
+        <button class="foot-btn" id="btn-memory" title="Story memory & known facts">Memory</button>
+        <button class="foot-btn" id="btn-personas" title="Your personas">Personas</button>
+        <button class="foot-btn" id="btn-settings" title="Settings">Settings</button>
+      </footer>
+    </aside>
+
+    <!-- Main ────────────────────────────────────────────────────────────── -->
+    <main id="main">
+      <header id="chat-header">
+        <button id="btn-sidebar" class="icon-btn only-mobile" title="Scenes" aria-label="Scenes">≡</button>
+        <div class="chat-title-wrap">
+          <input id="chat-title" class="chat-title" value="" spellcheck="false" aria-label="Scene title" />
+          <div class="chat-sub">
+            <span id="present-cast" class="present-cast"></span>
+            <span id="header-persona" class="pill" title="Your persona"></span>
+            <span id="header-model" class="pill subtle" title="Model"></span>
+          </div>
+        </div>
+        <div class="header-tools">
+          <button id="btn-branch-menu" class="ghost-btn hidden" title="Branch this scene">Branch</button>
+          <button id="btn-delete-chat" class="ghost-btn danger" title="Delete this scene">Delete</button>
+        </div>
+      </header>
+
+      <section id="messages" class="messages" aria-live="polite"></section>
+
+      <div id="composer">
+        <div class="composer-inner">
+          <div id="gen-status" class="gen-status hidden"></div>
+          <div class="composer-box">
+            <textarea id="input" rows="1" placeholder="Write your reply…  (Enter to send · /help for commands)"
+              aria-label="Your message"></textarea>
+            <div class="composer-buttons">
+              <button id="btn-stop" class="stop-btn hidden" title="Stop generating">■ Stop</button>
+              <button id="btn-send" class="send-btn" title="Send">Send ↵</button>
+            </div>
+          </div>
+          <div class="composer-foot">
+            <div class="quick-actions">
+              <button id="btn-opening" class="chip-btn" title="Have the AI open the scene">✦ Set the scene</button>
+              <button id="btn-regenerate" class="chip-btn" title="Regenerate the last reply">↻ Regenerate</button>
+              <button id="btn-continue" class="chip-btn" title="Continue the last reply">→ Continue</button>
+              <button id="btn-impersonate" class="chip-btn" title="Let the AI write your next message">🗣 Impersonate</button>
+            </div>
+            <div id="usage-note" class="usage-note"></div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div id="modal-root" class="modal-root hidden" aria-hidden="true"></div>
+  <div id="toasts" class="toasts"></div>
+  <input type="file" id="file-input" class="hidden" />
+
+  <script type="module" src="./src/app.js"></script>
+</body>
+</html>

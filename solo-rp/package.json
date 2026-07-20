@@ -1,0 +1,13 @@
+{
+  "name": "solo-rp",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node test/tree.test.js && node test/prompt.test.js && node test/api.test.js && node test/storage.test.js && node test/card.test.js && node test/world.test.js && node test/memory.test.js && node test/dom.test.js",
+    "serve": "python3 -m http.server 8080"
+  },
+  "dependencies": {
+    "jsdom": "^29.1.1"
+  }
+}
