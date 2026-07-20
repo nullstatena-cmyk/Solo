@@ -255,7 +255,8 @@ body { background: var(--bg); color: var(--text); overflow: hidden; }
 /* ── Header ───────────────────────────────────────────────────────────── */
 #chat-header {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
   gap: 8px;
   padding: 10px;
   border-bottom: 1px solid var(--line);
@@ -1233,3 +1234,50 @@ body { background: var(--bg); color: var(--text); overflow: hidden; }
   background: var(--line-2);
 }
 
+
+/* ── Compact scene summary line + scene menu (declutters the header) ─────── */
+.scene-summary {
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
+  font-size: 12px;
+  padding: 2px 4px;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  font-family: inherit;
+}
+.scene-summary:active { color: var(--text-dim); }
+.scene-summary.hidden { display: none; }
+
+#btn-scene { flex-shrink: 0; font-size: 20px; }
+
+.chip-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.scene-section { margin-bottom: 16px; }
+.scene-section-head {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+.scene-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+}
+.scene-row-label {
+  font-size: 11px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.scene-row-value { font-size: 14px; margin-top: 2px; }
+
+/* On mobile the "add to scene" list can be long — cap its height and scroll it. */
+.scene-section .chip-wrap { max-height: 40vh; overflow-y: auto; }
