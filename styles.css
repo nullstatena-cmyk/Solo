@@ -1292,3 +1292,14 @@ body { background: var(--bg); color: var(--text); overflow: hidden; position: fi
 
 /* On mobile the "add to scene" list can be long — cap its height and scroll it. */
 .scene-section .chip-wrap { max-height: 40vh; overflow-y: auto; }
+
+/* ── Scene director panel ─────────────────────────────────────────────────── */
+.time-btns { display: flex; gap: 6px; flex-shrink: 0; }
+.dir-toggle { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; color: var(--text-dim); padding: 8px 0; line-height: 1.4; cursor: pointer; }
+.dir-toggle input { margin-top: 2px; }
+.cast-chip.away { border: 1px dashed var(--line-2); background: transparent; color: var(--text-faint); }
+.cast-chip.away:active { color: var(--text); border-color: var(--accent); }
+.fact-acts { display: flex; align-items: center; flex-shrink: 0; }
+.timeline { display: flex; flex-direction: column; gap: 4px; }
+.tl-row { font-size: 12px; color: var(--text-dim); line-height: 1.4; }
+.tl-time { display: inline-block; min-width: 40px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
