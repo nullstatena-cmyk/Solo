@@ -464,7 +464,6 @@ function renderUsage() {
   el.usageNote.textContent = `${turns} msg${turns === 1 ? '' : 's'} · ${facts} memor${facts === 1 ? 'y' : 'ies'} · ${size}${mem}`;
 }
 
-
 /* ── Generation ───────────────────────────────────────────────────────────── */
 
 function recentTextFor(chat) {
