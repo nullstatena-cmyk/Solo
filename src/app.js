@@ -15,6 +15,7 @@ import * as api from './api.js';
 import * as storage from './storage.js';
 import * as W from './world.js';
 import * as memory from './memory.js';
+import * as director from './director.js';
 import { normalizeCard, extractCardFromPng } from './card.js';
 
 /* ── Defaults & seeds ─────────────────────────────────────────────────────── */
@@ -34,6 +35,7 @@ const DEFAULT_SETTINGS = {
   systemPrefix: '',
   autoMemory: true,
   autoSummary: true,
+  director: true, // scene director: story drives the roster + an in-universe clock
   summaryThreshold: 2400,
   summaryKeepRecent: 6,
 };
@@ -168,6 +170,31 @@ function cssEscape(s) {
 const presentCharacters = (chat) =>
   !chat || !state.activeWorld ? [] : (chat.presentCast || []).map((id) => castById(id)).filter(Boolean);
 
+// Make sure a scene has a director state, and keep the legacy `presentCast`
+// mirror in sync (the rest of the app — memory, labels, prompts — reads it).
+function ensureScene(chat) {
+  if (!chat) return null;
+  const seed = chat.presentCast || (state.activeWorld ? state.activeWorld.cast.map((c) => c.id) : []);
+  chat.sceneState = director.ensureSceneState(chat.sceneState, seed);
+  chat.presentCast = [...chat.sceneState.present];
+  return chat.sceneState;
+}
+
+function syncPresence(chat) {
+  if (chat?.sceneState) chat.presentCast = [...chat.sceneState.present];
+}
+
+// Resolve a spoken name to a cast id: exact (case-insensitive) first, then a
+// loose contains-match, so "GL", "Green Lantern", "green lantern (john)" all land.
+function resolveName(world, nameStr) {
+  if (!world || !nameStr) return null;
+  const q = String(nameStr).toLowerCase().trim();
+  const exact = world.cast.find((c) => c.name.toLowerCase() === q);
+  if (exact) return exact.id;
+  const loose = world.cast.find((c) => c.name.toLowerCase().includes(q) || q.includes(c.name.toLowerCase()));
+  return loose ? loose.id : null;
+}
+
 function presentLabel(chat) {
   const present = presentCharacters(chat);
   if (present.length === 1) return present[0].name;
@@ -295,12 +322,12 @@ function renderHeader() {
 function renderSceneSummary() {
   const chat = state.activeChat;
   if (!chat) { el.sceneSummary.textContent = ''; el.sceneSummary.classList.add('hidden'); return; }
-  const n = (chat.presentCast || []).length;
+  const st = ensureScene(chat);
   const persona = currentPersona();
   const bits = [
-    `${n} in scene`,
+    state.settings.director ? `⏱ ${director.fmtClock(st.clock)}` : null,
+    `${st.present.length} present`,
     persona?.name ? `as ${persona.name}` : null,
-    state.settings.model || 'no model',
   ].filter(Boolean);
   el.sceneSummary.textContent = `${bits.join('  ·  ')}  ⚙`;
   el.sceneSummary.classList.remove('hidden');
@@ -313,25 +340,63 @@ function openSceneMenu() {
   const world = state.activeWorld;
   if (!chat || !world) { toast('Open a scene first.'); return; }
   const persona = currentPersona();
+  const st = ensureScene(chat);
+  const nameOf = (id) => castById(id)?.name || '(unknown)';
 
-  const present = presentCharacters(chat);
+  const present = st.present.map((id) => castById(id)).filter(Boolean);
+  const away = st.away.map((id) => castById(id)).filter(Boolean);
+  const nearby = world.cast.filter((c) => !st.present.includes(c.id) && !st.away.includes(c.id));
+
   const presentChips = present.length
-    ? present.map((c) => `<span class="cast-chip">${escapeHtml(c.name)}<button data-leave="${escapeAttr(c.id)}" title="Remove from scene" aria-label="Remove ${escapeAttr(c.name)}">×</button></span>`).join('')
-    : '<span class="mem-empty">No one is in this scene yet.</span>';
+    ? present.map((c) => `<span class="cast-chip">${escapeHtml(c.name)}<button data-leave="${escapeAttr(c.id)}" title="Send off-stage" aria-label="Remove ${escapeAttr(c.name)}">×</button></span>`).join('')
+    : '<span class="mem-empty">No one is on stage.</span>';
+  const nearbyChips = nearby.length
+    ? nearby.map((c) => `<span class="cast-chip add" data-add-present="${escapeAttr(c.id)}" role="button" tabindex="0">＋ ${escapeHtml(c.name)}</span>`).join('')
+    : '<span class="mem-empty">Everyone is on stage or away.</span>';
+  const awayChips = away.length
+    ? away.map((c) => `<span class="cast-chip away" data-back="${escapeAttr(c.id)}" role="button" tabindex="0" title="Bring back">↩ ${escapeHtml(c.name)}</span>`).join('')
+    : '';
 
-  const available = world.cast.filter((c) => !(chat.presentCast || []).includes(c.id));
-  const addChips = available.length
-    ? available.map((c) => `<span class="cast-chip add" data-add-present="${escapeAttr(c.id)}" role="button" tabindex="0">＋ ${escapeHtml(c.name)}</span>`).join('')
-    : '<span class="mem-empty">Everyone in the cast is already here.</span>';
+  const pendingRows = (st.pending || []).length
+    ? st.pending.map((e) => {
+        const arrivals = (e.enter || []).map(nameOf).join(', ');
+        const inMin = Math.max(0, e.at - st.clock);
+        return `<div class="fact-row"><div class="fact-text">in ${inMin} min — ${escapeHtml(e.text || '(event)')}${arrivals ? `<div class="fact-who">arrivals: ${escapeHtml(arrivals)}</div>` : ''}</div><div class="fact-acts"><button class="mini-btn danger" data-cancel-event="${escapeAttr(e.id)}">Remove</button></div></div>`;
+      }).join('')
+    : '<span class="mem-empty">No scheduled events. Use <code>/schedule 5 …</code> to add one.</span>';
+
+  const timelineRows = (st.timeline || []).slice(-5).reverse()
+    .map((t) => `<div class="tl-row"><span class="tl-time">${director.fmtClock(t.at)}</span> ${escapeHtml(t.text)}</div>`).join('')
+    || '<span class="mem-empty">Nothing has happened yet.</span>';
 
   const body = `
+    <div class="scene-row">
+      <div><div class="scene-row-label">In-universe time</div><div class="scene-row-value">${director.fmtClock(st.clock)} elapsed</div></div>
+      <div class="time-btns">
+        <button class="mini-btn" data-adv="1">+1m</button>
+        <button class="mini-btn" data-adv="5">+5m</button>
+        <button class="mini-btn" data-adv="15">+15m</button>
+      </div>
+    </div>
+    <label class="dir-toggle"><input type="checkbox" data-director ${state.settings.director ? 'checked' : ''}/> <span>Auto-director — let the story move the cast &amp; advance time</span></label>
+    <div class="divider"></div>
     <div class="scene-section">
-      <div class="scene-section-head">In this scene (${present.length})</div>
+      <div class="scene-section-head">On stage — can act now (${present.length})</div>
       <div class="chip-wrap">${presentChips}</div>
     </div>
+    ${away.length ? `<div class="scene-section"><div class="scene-section-head">Elsewhere / away</div><div class="chip-wrap">${awayChips}</div></div>` : ''}
     <div class="scene-section">
-      <div class="scene-section-head">Add to scene</div>
-      <div class="chip-wrap">${addChips}</div>
+      <div class="scene-section-head">Nearby — bring into the scene</div>
+      <div class="chip-wrap">${nearbyChips}</div>
+    </div>
+    <div class="divider"></div>
+    <div class="scene-section">
+      <div class="scene-section-head">Scheduled events</div>
+      ${pendingRows}
+    </div>
+    <div class="scene-section">
+      <div class="scene-section-head">Recent beats</div>
+      <div class="timeline">${timelineRows}</div>
     </div>
     <div class="divider"></div>
     <div class="scene-row">
@@ -347,11 +412,17 @@ function openSceneMenu() {
       <button class="mini-btn" data-open-memory>Open</button>
     </div>`;
   const foot = `<button class="btn ghost" data-close>Done</button><button class="btn" data-branch-scene>⑃ Branch</button><button class="btn danger" data-del-scene>Delete scene</button>`;
-  const modal = openModal(modalShell('Scene', body, foot, { wide: true }));
+  const modal = openModal(modalShell('Scene director', body, foot, { wide: true }));
 
-  const rewire = () => { renderHeader(); openSceneMenu(); };
-  modal.querySelectorAll('[data-leave]').forEach((b) => (b.onclick = () => { toggleCastPresence(b.dataset.leave, false); rewire(); }));
-  modal.querySelectorAll('[data-add-present]').forEach((b) => (b.onclick = () => { toggleCastPresence(b.dataset.addPresent, true); rewire(); }));
+  const mutate = (fn) => { chat.sceneState = fn(ensureScene(chat)); syncPresence(chat); persistChat(chat); renderHeader(); openSceneMenu(); };
+  modal.querySelectorAll('[data-leave]').forEach((b) => (b.onclick = () => mutate((s) => director.removeFromScene(s, b.dataset.leave))));
+  modal.querySelectorAll('[data-add-present]').forEach((b) => (b.onclick = () => mutate((s) => director.addToScene(s, b.dataset.addPresent))));
+  modal.querySelectorAll('[data-back]').forEach((b) => (b.onclick = () => mutate((s) => director.bringBack(s, b.dataset.back))));
+  modal.querySelectorAll('[data-cancel-event]').forEach((b) => (b.onclick = () => mutate((s) => director.cancelPending(s, b.dataset.cancelEvent))));
+  modal.querySelectorAll('[data-adv]').forEach((b) => (b.onclick = () => {
+    mutate((s) => { const r = director.fireDueEvents(director.advanceClock(s, +b.dataset.adv)); if (r.fired.length) toast(r.fired.map((e) => e.text).join(' '), 'ok'); return r.state; });
+  }));
+  modal.querySelector('[data-director]').onchange = (e) => { state.settings.director = e.target.checked; persistIndex(); renderHeader(); };
   modal.querySelector('[data-change-persona]').onclick = openPersonas;
   modal.querySelector('[data-open-settings]').onclick = openSettings;
   modal.querySelector('[data-open-memory]').onclick = openMemory;
@@ -476,9 +547,20 @@ function buildMessages() {
   const world = state.activeWorld;
   const chat = state.activeChat;
   const persona = currentPersona();
+  const st = ensureScene(chat);
   const lore = W.selectLore(world, recentTextFor(chat));
   const gated = W.factsKnownInScene(world, chat.presentCast || []).map((f) => ({ ...f, knownByNames: W.knownByNames(world, f) }));
-  return prompt.buildWorldMessages({ chat, world, persona, settings: state.settings, lore, facts: gated, summary: chat.summary || '' });
+  const nameOf = (id) => castById(id)?.name;
+  const scene = {
+    clock: st.clock,
+    present: st.present.map(nameOf).filter(Boolean),
+    away: st.away.map(nameOf).filter(Boolean),
+    justNow: [...(st.justNow || [])],
+  };
+  const messages = prompt.buildWorldMessages({ chat, world, persona, settings: state.settings, lore, facts: gated, summary: chat.summary || '', scene });
+  // "Just now" arrivals are announced once, then cleared.
+  if (st.justNow?.length) { st.justNow = []; persistChat(chat); }
+  return messages;
 }
 
 function setGenerating(on) {
@@ -557,6 +639,9 @@ async function send() {
   if (state.generating) return;
   const text = el.input.value.trim();
   if (!text) return;
+
+  const dcmd = director.parseDirectorCommand(text);
+  if (dcmd) { el.input.value = ''; autoGrow(); return handleDirectorCommand(dcmd); }
 
   const cmd = memory.parseCommand(text);
   if (cmd) { el.input.value = ''; autoGrow(); return handleCommand(cmd); }
@@ -647,8 +732,52 @@ async function utilityComplete(messages, { maxTokens = 512 } = {}) {
 }
 
 async function runAfterTurn() {
+  if (state.settings.director) await runDirector(true);
   if (state.settings.autoMemory) await runExtraction(true);
   if (state.settings.autoSummary && memory.shouldSummarize(state.activeChat, state.settings)) await runSummary(true);
+}
+
+// The director pass: read the last exchange, ask the utility model how the scene's
+// cast and clock changed, apply it, and fire any events that have now come due.
+async function runDirector(quiet = false) {
+  const world = state.activeWorld;
+  const chat = state.activeChat;
+  if (!world || !chat || !state.settings.apiKey) { if (!quiet) toast('Set a model and key first.', 'err'); return; }
+  const st = ensureScene(chat);
+  const path = tree.activePath(chat);
+  const lastAsst = [...path].reverse().find((n) => n.role === 'assistant');
+  const lastUser = [...path].reverse().find((n) => n.role === 'user');
+  if (!lastAsst) return;
+  const persona = currentPersona();
+  const exchange = [lastUser, lastAsst].filter(Boolean)
+    .map((n) => `${n.role === 'assistant' ? 'Scene' : persona?.name || 'Player'}: ${n.content}`)
+    .join('\n');
+  const nameOf = (id) => castById(id)?.name;
+  const messages = director.buildDirectorMessages({
+    exchangeText: exchange,
+    roster: world.cast.map((c) => c.name),
+    present: st.present.map(nameOf).filter(Boolean),
+    away: st.away.map(nameOf).filter(Boolean),
+    clock: st.clock,
+  });
+
+  setMemoryBusy(true);
+  try {
+    const text = await utilityComplete(messages, { maxTokens: 220 });
+    const dir = director.parseDirection(text);
+    let next = director.applyDirection(st, dir, (n) => resolveName(world, n));
+    const { state: fired } = director.fireDueEvents(next);
+    chat.sceneState = fired;
+    syncPresence(chat);
+    persistChat(chat);
+    renderHeader();
+    if (!quiet) toast('Scene updated.', 'ok');
+  } catch (err) {
+    // On any failure (rate limit, bad JSON) the scene simply doesn't change.
+    if (!quiet) toast('Director pass failed.', 'err');
+  } finally {
+    setMemoryBusy(false);
+  }
 }
 
 async function runExtraction(quiet = false) {
@@ -730,6 +859,62 @@ async function recapNow() {
   }
 }
 
+/* ── Scene-director directives ────────────────────────────────────────────── */
+
+async function handleDirectorCommand(cmd) {
+  if (cmd.type === 'scene') return openSceneMenu();
+  if (!state.activeChat) { toast('Open a scene first.'); return; }
+  const world = state.activeWorld;
+  const chat = state.activeChat;
+  const st = ensureScene(chat);
+
+  if (cmd.type === 'time') {
+    const present = st.present.map((id) => castById(id)?.name).filter(Boolean).join(', ') || 'no one';
+    const away = st.away.map((id) => castById(id)?.name).filter(Boolean).join(', ');
+    return openInfo('Scene', `<div style="line-height:1.7;"><b>Time elapsed:</b> ${director.fmtClock(st.clock)}<br><b>On stage:</b> ${escapeHtml(present)}${away ? `<br><b>Away:</b> ${escapeHtml(away)}` : ''}</div>`);
+  }
+
+  const resolveMany = (names) => names.map((n) => ({ n, id: resolveName(world, n) }));
+  const applyNames = (names, fn, verb) => {
+    const hits = resolveMany(names);
+    const missed = hits.filter((h) => !h.id).map((h) => h.n);
+    let s = ensureScene(chat);
+    for (const h of hits) if (h.id) s = fn(s, h.id);
+    chat.sceneState = s; syncPresence(chat); persistChat(chat); renderHeader();
+    const named = hits.filter((h) => h.id).map((h) => castById(h.id).name);
+    if (named.length) toast(`${named.join(', ')} ${verb}.`, 'ok');
+    if (missed.length) toast(`No cast match: ${missed.join(', ')}.`, 'err');
+  };
+
+  if (cmd.type === 'enter') return applyNames(cmd.names, director.addToScene, 'entered');
+  if (cmd.type === 'leave') return applyNames(cmd.names, director.removeFromScene, 'stepped off stage');
+  if (cmd.type === 'away') return applyNames(cmd.names, director.sendAway, 'left the scene');
+  if (cmd.type === 'back') return applyNames(cmd.names, director.bringBack, 'returned');
+
+  if (cmd.type === 'schedule') {
+    const enter = cmd.names.map((n) => resolveName(world, n)).filter(Boolean);
+    chat.sceneState = director.schedule(st, { at: st.clock + cmd.minutes, text: cmd.text || 'Something happens.', enter });
+    persistChat(chat);
+    return toast(`Scheduled in ${cmd.minutes} min.`, 'ok');
+  }
+
+  if (cmd.type === 'wait') return runTimeSkip(cmd.minutes);
+}
+
+// Advance the in-universe clock, fire anything now due, then have the model
+// narrate the passage of time (with whoever just arrived).
+async function runTimeSkip(minutes) {
+  if (state.generating) return;
+  const chat = state.activeChat;
+  if (!state.settings.apiKey) { toast('Add your OpenRouter API key in Settings.', 'err'); return openSettings(); }
+  const { state: advanced, fired } = director.fireDueEvents(director.advanceClock(ensureScene(chat), minutes));
+  chat.sceneState = advanced; syncPresence(chat); persistChat(chat); renderHeader();
+  const arrivals = fired.map((e) => e.text).filter(Boolean).join(' ');
+  const nudge = `(${minutes} in-universe minutes pass.${arrivals ? ` ${arrivals}` : ''} Narrate what happens as time moves forward, keeping only the present characters in play. A few vivid sentences.)`;
+  const asst = labelAssistant(tree.addMessage(chat, { role: 'assistant', content: '', model: state.settings.model }));
+  await streamInto(asst, { removeOnError: true, nudge, afterTurn: true });
+}
+
 /* ── Commands ─────────────────────────────────────────────────────────────── */
 
 async function handleCommand({ cmd, arg }) {
@@ -770,10 +955,16 @@ async function handleCommand({ cmd, arg }) {
 
 function commandHelpHtml() {
   const rows = [
+    ['/enter [names]', 'Bring characters on stage (comma-separated).'],
+    ['/leave [names]', 'Send characters off stage (still nearby).'],
+    ['/away [names]', 'Send characters elsewhere (e.g. to the Watchtower).'],
+    ['/back [names]', 'Bring characters back from elsewhere.'],
+    ['/wait [n]', 'Let n in-universe minutes pass — scheduled events fire, then the scene is narrated.'],
+    ['/schedule [n] [text: names]', 'Schedule an event in n minutes, e.g. /schedule 5 League backup arrives: Hawkgirl, Green Lantern.'],
+    ['/time', 'Show the in-universe clock and who is present.'],
+    ['/scene', 'Open the scene director panel.'],
     ['/recap', 'Write a “story so far” recap of this scene.'],
     ['/whoknows [text]', 'List facts (optionally matching text) and who knows them.'],
-    ['/join [name]', 'Bring a cast member into the current scene.'],
-    ['/leave [name]', 'Remove a cast member from the scene.'],
     ['/remember [fact]', 'File a fact, known to whoever is present.'],
     ['/correct [fact]', 'File a world truth known to everyone (fix a contradiction).'],
     ['/help', 'Show this list.'],
@@ -858,6 +1049,7 @@ function branchFrom(id) {
   fork.worldId = chat.worldId;
   fork.personaId = chat.personaId;
   fork.presentCast = [...(chat.presentCast || [])];
+  fork.sceneState = director.ensureSceneState(chat.sceneState, fork.presentCast);
   fork.summary = chat.summary || '';
   fork.summarizedIds = [...(chat.summarizedIds || [])];
   state.activeChat = fork;
@@ -874,6 +1066,7 @@ function createSceneInWorld() {
   const chat = tree.createChat({ title: `${world.name} — ${new Date().toLocaleDateString()}`, personaId: state.activePersonaId });
   chat.worldId = world.id;
   chat.presentCast = world.cast.map((c) => c.id);
+  chat.sceneState = director.newSceneState(chat.presentCast);
   chat.summary = '';
   chat.summarizedIds = [];
   // If exactly one cast member and they have a greeting, open with it.
@@ -903,6 +1096,7 @@ function openScene(id) {
   state.activeChatId = id;
   state.editingId = null;
   if (chat.personaId) state.activePersonaId = chat.personaId;
+  ensureScene(chat);
   persistIndex();
   renderAll();
   closeSidebarMobile();
