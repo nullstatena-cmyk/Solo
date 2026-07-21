@@ -24,13 +24,16 @@
 /* ── Reset & Base ─────────────────────────────────────────────────────── */
 * { box-sizing: border-box; }
 html, body { width: 100%; height: 100%; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-body { background: var(--bg); color: var(--text); overflow: hidden; -webkit-user-select: text; user-select: text; }
+body { background: var(--bg); color: var(--text); overflow: hidden; position: fixed; width: 100%; height: 100%; -webkit-user-select: text; user-select: text; }
 
 #app {
   display: flex;
   flex-direction: column;
   height: 100vh;
   width: 100%;
+  position: fixed;
+  top: 0;
+  left: 0;
 }
 
 /* ──────────────────────────────────────────────────────────────────────
@@ -249,6 +252,7 @@ body { background: var(--bg); color: var(--text); overflow: hidden; -webkit-user
   flex-direction: column;
   width: 100%;
   min-width: 0;
+  min-height: 0;
   background: var(--bg);
 }
 
@@ -406,12 +410,16 @@ body { background: var(--bg); color: var(--text); overflow: hidden; -webkit-user
 /* ── Messages ─────────────────────────────────────────────────────────── */
 #messages {
   flex: 1;
-  overflow-y: auto;
+  min-height: 0;
+  overflow-y: auto !important;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   -webkit-user-select: text;
   user-select: text;
   padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   display: flex;
   flex-direction: column;
   gap: 8px;
