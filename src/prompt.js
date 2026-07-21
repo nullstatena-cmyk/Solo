@@ -99,7 +99,12 @@ export function buildApiMessages({ chat, character = {}, persona = null, setting
  * crucially — only the facts the present cast actually know, grouped so the model
  * can honor who-knows-what.
  */
-export function buildWorldSystemPrompt({ world, presentCast = [], persona = null, settings = {}, lore = [], facts = [] }) {
+const fmtClock = (minutes) => {
+  const m = Math.max(0, Math.round(Number(minutes) || 0));
+  return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
+};
+
+export function buildWorldSystemPrompt({ world, presentCast = [], persona = null, settings = {}, lore = [], facts = [], scene = null }) {
   const parts = [];
   const names = { charName: presentCast.map((c) => c.name).join(' and ') || 'the cast', userName: persona?.name };
 
@@ -129,6 +134,17 @@ export function buildWorldSystemPrompt({ world, presentCast = [], persona = null
     parts.push(`The user plays ${persona.name}.${persona.description ? ` ${persona.description}` : ''}`);
   }
 
+  if (scene && (scene.present?.length || scene.away?.length || scene.justNow?.length || typeof scene.clock === 'number')) {
+    const lines = [
+      `SCENE STATE — a scene director handles who enters, who leaves, and how time passes. Do not bring characters in or out on your own; voice only those listed as present, and let entrances and exits be driven by the director.`,
+    ];
+    if (typeof scene.clock === 'number') lines.push(`In-universe time elapsed: ${fmtClock(scene.clock)}.`);
+    if (scene.present?.length) lines.push(`Present now (only these may speak or act): ${scene.present.join(', ')}.`);
+    if (scene.away?.length) lines.push(`Elsewhere / unavailable right now: ${scene.away.join(', ')}.`);
+    if (scene.justNow?.length) lines.push(`Just now: ${scene.justNow.join(' ')}`);
+    parts.push(lines.join('\n'));
+  }
+
   if (lore.length) {
     parts.push(`World details:\n${lore.map((e) => `• ${e.content}`).join('\n')}`);
   }
@@ -156,12 +172,12 @@ export function buildWorldSystemPrompt({ world, presentCast = [], persona = null
  * (ts at/under the watermark) are dropped from the transcript — the summary stands
  * in for them — and the rest is budget-trimmed as usual.
  */
-export function buildWorldMessages({ chat, world, persona = null, settings = {}, lore = [], facts = [], summary = '' }) {
+export function buildWorldMessages({ chat, world, persona = null, settings = {}, lore = [], facts = [], summary = '', scene = null }) {
   const presentCast = (chat.presentCast || []).map((id) => world.cast.find((c) => c.id === id)).filter(Boolean);
   const names = { charName: presentCast.map((c) => c.name).join(' and ') || 'the cast', userName: persona?.name };
   const messages = [];
 
-  let system = buildWorldSystemPrompt({ world, presentCast, persona, settings, lore, facts });
+  let system = buildWorldSystemPrompt({ world, presentCast, persona, settings, lore, facts, scene });
   if (summary) system += `\n\nStory so far:\n${summary}`;
   if (system) messages.push({ role: 'system', content: system });
 
