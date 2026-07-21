@@ -464,27 +464,6 @@ function renderUsage() {
   el.usageNote.textContent = `${turns} msg${turns === 1 ? '' : 's'} · ${facts} memor${facts === 1 ? 'y' : 'ies'} · ${size}${mem}`;
 }
 
-function scrollToBottom() {
-  requestAnimationFrame(() => {
-    const m = el.messages;
-    if (!m) return;
-    m.scrollTop = m.scrollHeight;
-  });
-}
-
-function scrollToBottomIfNear(threshold = 150) {
-  requestAnimationFrame(() => {
-    const m = el.messages;
-    if (!m) return;
-
-    const distance =
-      m.scrollHeight - m.scrollTop - m.clientHeight;
-
-    if (distance <= threshold) {
-      m.scrollTop = m.scrollHeight;
-    }
-  });
-}
 
 /* ── Generation ───────────────────────────────────────────────────────────── */
 
